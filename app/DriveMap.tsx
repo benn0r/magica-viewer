@@ -23,8 +23,8 @@ function splitRoute(route: DrivePoint[]) {
       const gapMs = point.t - previous.t;
       const gapHours = gapMs / (60 * 60 * 1000);
       const jumpKm = distanceKm(previous, point);
-      const implausibleJump = jumpKm > Math.max(1, gapHours * 180 + 0.5);
-      if (gapMs <= 0 || gapMs > 10 * 60 * 1000 || implausibleJump) {
+      const implausibleJump = jumpKm > 1.5 || jumpKm > Math.max(0.3, gapHours * 150);
+      if (gapMs <= 0 || gapMs > 3 * 60 * 1000 || implausibleJump) {
         if (segment.length > 1) segments.push(segment);
         segment = [];
       }
@@ -71,11 +71,13 @@ export default function DriveMap({ data }: { data: DriveData | null }) {
     const allBounds: L.LatLngExpression[] = [];
     for (const route of routes.values()) {
       for (const segment of splitRoute(route)) {
-        const reduced = segment.filter((_, i) => i === 0 || i === segment.length - 1 || i % 3 === 0);
-        const coords = reduced.map((p) => [p.lat, p.lng] as L.LatLngTuple);
+        const coords = segment.map((p) => [p.lat, p.lng] as L.LatLngTuple);
         allBounds.push(...coords.filter((_, i) => i % 20 === 0));
-        L.polyline(coords, { renderer: canvas, color: "#0d6efd", weight: 6, opacity: 0.08, lineCap: "round", lineJoin: "round", interactive: false }).addTo(group);
-        L.polyline(coords, { renderer: canvas, color: "#0d6efd", weight: 2.25, opacity: 0.35, lineCap: "round", lineJoin: "round", interactive: false }).addTo(group);
+        L.polyline(coords, { renderer: canvas, color: "#2563eb", weight: 9, opacity: 0.08, lineCap: "round", lineJoin: "round", interactive: false }).addTo(group);
+        L.polyline(coords, { renderer: canvas, color: "#06b6d4", weight: 6.5, opacity: 0.1, lineCap: "round", lineJoin: "round", interactive: false }).addTo(group);
+        L.polyline(coords, { renderer: canvas, color: "#22c55e", weight: 4.5, opacity: 0.13, lineCap: "round", lineJoin: "round", interactive: false }).addTo(group);
+        L.polyline(coords, { renderer: canvas, color: "#fde047", weight: 3, opacity: 0.2, lineCap: "round", lineJoin: "round", interactive: false }).addTo(group);
+        L.polyline(coords, { renderer: canvas, color: "#ef4444", weight: 1.5, opacity: 0.42, lineCap: "round", lineJoin: "round", interactive: false }).addTo(group);
       }
     }
     if (allBounds.length) map.fitBounds(L.latLngBounds(allBounds), { padding: [34, 34], maxZoom: 12 });
