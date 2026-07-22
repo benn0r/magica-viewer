@@ -134,7 +134,6 @@ export default function Home() {
           <span className="brand-icon" aria-hidden="true">M</span>
           <div><strong>Magica Viewer</strong><span>Drive history explorer</span></div>
         </div>
-        <span className="privacy-note"><span className="privacy-dot" /> Local processing only</span>
       </header>
 
       <div className="viewer-layout">
@@ -175,7 +174,6 @@ export default function Home() {
               <div><dt>History</dt><dd className="date-stat">{data ? dateRange : "—"}</dd></div>
             </dl>
           </section>
-          <div className="local-note"><span>✓</span><p><strong>Private by default</strong>Your backup is processed in this browser and is not uploaded.</p></div>
         </aside>
 
         <section className="map-workspace" aria-label="Drive map viewer">
