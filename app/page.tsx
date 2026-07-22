@@ -15,6 +15,9 @@ export type DriveData = {
   distanceKm: number;
   firstDate: number;
   lastDate: number;
+  totalPoints: number;
+  recoveredPoints: number;
+  ignoredPoints: number;
 };
 
 type Status = "idle" | "reading" | "ready" | "error";
@@ -53,13 +56,32 @@ export default function Home() {
       const db = new SQL.Database(new Uint8Array(await file.arrayBuffer()));
       const tables = db.exec("SELECT name FROM sqlite_master WHERE type='table' AND name='ZLOCATION'");
       if (!tables[0]?.values.length) throw new Error("This database does not contain Magica location data.");
+      const totalResult = db.exec("SELECT COUNT(*) FROM ZLOCATION");
+      const totalPoints = Number(totalResult[0]?.values[0]?.[0] ?? 0);
       const result = db.exec(`
-        SELECT ZLATITUDE, ZLONGITUDE, ZTIMESTAMP, ZPERFORMANCE
-        FROM ZLOCATION
-        WHERE ZPERFORMANCE IS NOT NULL
-          AND ZLATITUDE BETWEEN -90 AND 90
+        WITH resolved_locations AS (
+          SELECT
+            Z_PK, ZLATITUDE, ZLONGITUDE, ZTIMESTAMP,
+            ZPERFORMANCE AS ZRESOLVEDPERFORMANCE, 0 AS ZRECOVERED
+          FROM ZLOCATION
+          WHERE ZPERFORMANCE IS NOT NULL
+
+          UNION ALL
+
+          SELECT
+            location.Z_PK, location.ZLATITUDE, location.ZLONGITUDE,
+            location.ZTIMESTAMP, performance.Z_PK AS ZRESOLVEDPERFORMANCE,
+            1 AS ZRECOVERED
+          FROM ZLOCATION AS location
+          JOIN ZPERFORMANCE AS performance
+            ON location.ZTIMESTAMP BETWEEN performance.ZSTARTDATE AND performance.ZENDDATE
+          WHERE location.ZPERFORMANCE IS NULL
+        )
+        SELECT ZLATITUDE, ZLONGITUDE, ZTIMESTAMP, ZRESOLVEDPERFORMANCE, ZRECOVERED
+        FROM resolved_locations
+        WHERE ZLATITUDE BETWEEN -90 AND 90
           AND ZLONGITUDE BETWEEN -180 AND 180
-        ORDER BY ZPERFORMANCE, ZTIMESTAMP, Z_PK
+        ORDER BY ZRESOLVEDPERFORMANCE, ZTIMESTAMP, Z_PK
       `);
       db.close();
       if (!result[0]?.values.length) throw new Error("No recorded GPS locations were found in this backup.");
@@ -67,10 +89,12 @@ export default function Home() {
       const raw = result[0].values as number[][];
       const points: DrivePoint[] = [];
       let distanceKm = 0;
+      let recoveredPoints = 0;
       let previous: DrivePoint | null = null;
-      for (const [lat, lng, appleTime, trip] of raw) {
+      for (const [lat, lng, appleTime, trip, recovered] of raw) {
         const point = { lat, lng, t: (appleTime + 978307200) * 1000, trip };
         if (!Number.isFinite(lat) || !Number.isFinite(lng) || (lat === 0 && lng === 0)) continue;
+        if (recovered === 1) recoveredPoints += 1;
         if (previous && previous.trip === point.trip) {
           const gap = point.t - previous.t;
           const d = haversine(previous, point);
@@ -81,7 +105,16 @@ export default function Home() {
       }
       const tripCount = new Set(points.map((p) => p.trip)).size;
       const dates = points.map((p) => p.t).filter(Number.isFinite);
-      setData({ points, trips: tripCount, distanceKm, firstDate: Math.min(...dates), lastDate: Math.max(...dates) });
+      setData({
+        points,
+        trips: tripCount,
+        distanceKm,
+        firstDate: Math.min(...dates),
+        lastDate: Math.max(...dates),
+        totalPoints,
+        recoveredPoints,
+        ignoredPoints: Math.max(0, totalPoints - points.length),
+      });
       setStatus("ready");
     } catch (err) {
       setStatus("error");
@@ -135,7 +168,10 @@ export default function Home() {
             <dl className="stats">
               <div><dt>Recorded drives</dt><dd>{data ? data.trips.toLocaleString() : "—"}</dd></div>
               <div><dt>Distance traced</dt><dd>{data ? `${Math.round(data.distanceKm).toLocaleString()} km` : "—"}</dd></div>
-              <div><dt>GPS points</dt><dd>{data ? data.points.length.toLocaleString() : "—"}</dd></div>
+              <div><dt>GPS points in backup</dt><dd>{data ? data.totalPoints.toLocaleString() : "—"}</dd></div>
+              <div><dt>GPS points mapped</dt><dd>{data ? data.points.length.toLocaleString() : "—"}</dd></div>
+              <div><dt>Recovered points</dt><dd>{data ? data.recoveredPoints.toLocaleString() : "—"}</dd></div>
+              <div><dt>Ignored points</dt><dd>{data ? data.ignoredPoints.toLocaleString() : "—"}</dd></div>
               <div><dt>History</dt><dd className="date-stat">{data ? dateRange : "—"}</dd></div>
             </dl>
           </section>
