@@ -5,7 +5,7 @@ import L from "leaflet";
 import type { DriveData, DrivePoint } from "./page";
 import "leaflet/dist/leaflet.css";
 
-export default function DriveMap({ data }: { data: DriveData | null }) {
+export default function DriveMap({ data, selectedTrip }: { data: DriveData | null; selectedTrip: number | null }) {
   const elementRef = useRef<HTMLDivElement>(null);
   const mapRef = useRef<L.Map | null>(null);
   const layerRef = useRef<L.LayerGroup | null>(null);
@@ -38,15 +38,21 @@ export default function DriveMap({ data }: { data: DriveData | null }) {
       routes.set(point.trip, route);
     }
     const allBounds: L.LatLngExpression[] = [];
-    for (const route of routes.values()) {
+    const selectedBounds: L.LatLngExpression[] = [];
+    for (const [trip, route] of routes) {
       if (route.length < 2) continue;
       const coords = route.map((p) => [p.lat, p.lng] as L.LatLngTuple);
       allBounds.push(...coords.filter((_, i) => i % 20 === 0));
-      L.polyline(coords, { renderer: canvas, color: "#0d6efd", weight: 6, opacity: 0.08, lineCap: "round", lineJoin: "round", interactive: false }).addTo(group);
-      L.polyline(coords, { renderer: canvas, color: "#0d6efd", weight: 2.25, opacity: 0.35, lineCap: "round", lineJoin: "round", interactive: false }).addTo(group);
+      allBounds.push(coords.at(-1)!);
+      if (trip === selectedTrip) selectedBounds.push(...coords);
+      const isSelected = trip === selectedTrip;
+      const isDimmed = selectedTrip !== null && !isSelected;
+      L.polyline(coords, { renderer: canvas, color: "#0d6efd", weight: isSelected ? 9 : 6, opacity: isSelected ? 0.16 : isDimmed ? 0.025 : 0.08, lineCap: "round", lineJoin: "round", interactive: false }).addTo(group);
+      L.polyline(coords, { renderer: canvas, color: "#0d6efd", weight: isSelected ? 4 : 2.25, opacity: isSelected ? 0.9 : isDimmed ? 0.09 : 0.35, lineCap: "round", lineJoin: "round", interactive: false }).addTo(group);
     }
-    if (allBounds.length) map.fitBounds(L.latLngBounds(allBounds), { padding: [34, 34], maxZoom: 12 });
-  }, [data]);
+    const bounds = selectedBounds.length ? selectedBounds : allBounds;
+    if (bounds.length) map.fitBounds(L.latLngBounds(bounds), { padding: [34, 34], maxZoom: selectedBounds.length ? 15 : 12 });
+  }, [data, selectedTrip]);
 
   return <div ref={elementRef} className="leaflet-host" aria-label="Interactive map of recorded drives" />;
 }

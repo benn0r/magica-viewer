@@ -9,8 +9,21 @@ const DriveMap = dynamic(() => import("./DriveMap"), {
 });
 
 export type DrivePoint = { lat: number; lng: number; t: number; trip: number };
+export type DriveDetails = {
+  id: number;
+  startDate: number;
+  endDate: number;
+  distanceKm: number;
+  startCity: string;
+  endCity: string;
+  averageSpeedKmh: number;
+  maxSpeedKmh: number;
+  score: number;
+  note: string;
+};
 export type DriveData = {
   points: DrivePoint[];
+  drives: DriveDetails[];
   trips: number;
   distanceKm: number;
   firstDate: number;
@@ -21,6 +34,24 @@ export type DriveData = {
 };
 
 type Status = "idle" | "reading" | "ready" | "error";
+type ActiveView = "map" | "list";
+
+const driveDateFormatter = new Intl.DateTimeFormat("en", {
+  weekday: "short", day: "numeric", month: "short", year: "numeric",
+  hour: "2-digit", minute: "2-digit",
+});
+
+function formatDuration(startDate: number, endDate: number) {
+  const minutes = Math.max(0, Math.round((endDate - startDate) / 60000));
+  if (minutes < 60) return `${minutes} min`;
+  const hours = Math.floor(minutes / 60);
+  return `${hours}h ${minutes % 60}m`;
+}
+
+function formatScore(score: number) {
+  if (!Number.isFinite(score) || score <= 0) return "—";
+  return score <= 1 ? `${Math.round(score * 100)}%` : Math.round(score).toString();
+}
 
 function displayFileName(file: File) {
   const name = file.name;
@@ -44,6 +75,8 @@ export default function Home() {
   const [fileName, setFileName] = useState("");
   const [error, setError] = useState("");
   const [dragging, setDragging] = useState(false);
+  const [activeView, setActiveView] = useState<ActiveView>("map");
+  const [selectedTrip, setSelectedTrip] = useState<number | null>(null);
 
   const importFile = useCallback(async (file?: File) => {
     if (!file) return;
@@ -58,6 +91,13 @@ export default function Home() {
       if (!tables[0]?.values.length) throw new Error("This database does not contain Magica location data.");
       const totalResult = db.exec("SELECT COUNT(*) FROM ZLOCATION");
       const totalPoints = Number(totalResult[0]?.values[0]?.[0] ?? 0);
+      const driveResult = db.exec(`
+        SELECT Z_PK, ZSTARTDATE, ZENDDATE, ZTOTALDISTANCE,
+          ZSTARTADDRESSCITY, ZENDADDRESSCITY, ZAVERAGESPEED,
+          ZMAXSPEED, ZDRIVINGSCORE, ZNOTE
+        FROM ZPERFORMANCE
+        ORDER BY ZSTARTDATE DESC
+      `);
       const result = db.exec(`
         WITH resolved_locations AS (
           SELECT
@@ -87,6 +127,18 @@ export default function Home() {
       if (!result[0]?.values.length) throw new Error("No recorded GPS locations were found in this backup.");
 
       const raw = result[0].values as number[][];
+      const drives: DriveDetails[] = (driveResult[0]?.values ?? []).map((row) => ({
+        id: Number(row[0]),
+        startDate: (Number(row[1]) + 978307200) * 1000,
+        endDate: (Number(row[2]) + 978307200) * 1000,
+        distanceKm: Number(row[3] ?? 0) / 1000,
+        startCity: String(row[4] ?? ""),
+        endCity: String(row[5] ?? ""),
+        averageSpeedKmh: Number(row[6] ?? 0) * 3.6,
+        maxSpeedKmh: Number(row[7] ?? 0) * 3.6,
+        score: Number(row[8] ?? 0),
+        note: String(row[9] ?? ""),
+      }));
       const points: DrivePoint[] = [];
       let distanceKm = 0;
       let recoveredPoints = 0;
@@ -107,6 +159,7 @@ export default function Home() {
       const dates = points.map((p) => p.t).filter(Number.isFinite);
       setData({
         points,
+        drives,
         trips: tripCount,
         distanceKm,
         firstDate: Math.min(...dates),
@@ -115,6 +168,8 @@ export default function Home() {
         recoveredPoints,
         ignoredPoints: Math.max(0, totalPoints - points.length),
       });
+      setSelectedTrip(null);
+      setActiveView("map");
       setStatus("ready");
     } catch (err) {
       setStatus("error");
@@ -176,21 +231,47 @@ export default function Home() {
           </section>
         </aside>
 
-        <section className="map-workspace" aria-label="Drive map viewer">
+        <section className="map-workspace" aria-label="Drive history viewer">
           <div className="map-toolbar">
-            <div><h2>Map</h2><span>{data ? `${data.trips.toLocaleString()} recorded drives` : "No data loaded"}</span></div>
+            <div className="view-tabs" role="tablist" aria-label="Drive views">
+              <button role="tab" aria-selected={activeView === "map"} className={activeView === "map" ? "active" : ""} onClick={() => setActiveView("map")}>Map</button>
+              <button role="tab" aria-selected={activeView === "list"} className={activeView === "list" ? "active" : ""} onClick={() => setActiveView("list")} disabled={!data}>List</button>
+            </div>
+            <span className="toolbar-summary">{data ? `${data.trips.toLocaleString()} recorded drives` : "No data loaded"}</span>
             {data && <button className="change-file" onClick={() => inputRef.current?.click()}>Change file</button>}
           </div>
-          <div className="map-frame">
-            <DriveMap data={data} />
-            {!data && <div className="map-empty">
-              <div className="map-pin" aria-hidden="true">⌖</div>
-              <strong>No drive data loaded</strong>
-              <span>Open a Magica backup from the panel to display your routes.</span>
-              <button onClick={() => inputRef.current?.click()}>Choose file</button>
+          {activeView === "map" ? <div className="map-frame" role="tabpanel">
+              <DriveMap data={data} selectedTrip={selectedTrip} />
+              {!data && <div className="map-empty">
+                <div className="map-pin" aria-hidden="true">⌖</div>
+                <strong>No drive data loaded</strong>
+                <span>Open a Magica backup from the panel to display your routes.</span>
+                <button onClick={() => inputRef.current?.click()}>Choose file</button>
+              </div>}
+              {data && <div className="legend"><span>Route density</span><i /><i /><i /><i /><i /><span>High</span></div>}
+            </div> : <div className="drive-list-frame" role="tabpanel">
+              <div className="drive-list-header">
+                <div><strong>Recorded drives</strong><span>Select a drive to focus it on the map.</span></div>
+                <span>{data?.drives.length.toLocaleString()} drives</span>
+              </div>
+              <div className="drive-list">
+                {data?.drives.map((drive) => <button
+                  key={drive.id}
+                  className={`drive-row ${selectedTrip === drive.id ? "selected" : ""}`}
+                  onClick={() => { setSelectedTrip(drive.id); setActiveView("map"); }}
+                >
+                  <span className="drive-date">{driveDateFormatter.format(drive.startDate)}</span>
+                  <span className="drive-route"><strong>{drive.startCity || "Unknown start"}</strong><i aria-hidden="true">→</i><strong>{drive.endCity || "Unknown destination"}</strong>{drive.note && <small>{drive.note}</small>}</span>
+                  <span className="drive-metrics">
+                    <span><strong>{drive.distanceKm.toFixed(1)} km</strong><small>Distance</small></span>
+                    <span><strong>{formatDuration(drive.startDate, drive.endDate)}</strong><small>Duration</small></span>
+                    <span><strong>{Math.round(drive.averageSpeedKmh)} km/h</strong><small>Average</small></span>
+                    <span><strong>{Math.round(drive.maxSpeedKmh)} km/h</strong><small>Maximum</small></span>
+                    <span><strong>{formatScore(drive.score)}</strong><small>Score</small></span>
+                  </span>
+                </button>)}
+              </div>
             </div>}
-            {data && <div className="legend"><span>Route density</span><i /><i /><i /><i /><i /><span>High</span></div>}
-          </div>
         </section>
       </div>
     </main>
