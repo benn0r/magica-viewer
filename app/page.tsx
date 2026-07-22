@@ -125,7 +125,7 @@ export default function Home() {
 
           <section className="panel-section file-section">
             <h2>Current file</h2>
-            {data ? <div className="file-card"><span className="file-badge">DB</span><div><strong>{fileName}</strong><span>{data.points.toLocaleString()} GPS points</span></div></div> : <p className="empty-copy">No backup opened</p>}
+            {data ? <div className="file-card"><span className="file-badge">DB</span><div><strong>{fileName}</strong><span>{data.points.length.toLocaleString()} GPS points</span></div></div> : <p className="empty-copy">No backup opened</p>}
           </section>
 
           <section className="panel-section summary-section">
