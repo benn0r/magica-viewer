@@ -19,6 +19,13 @@ export type DriveData = {
 
 type Status = "idle" | "reading" | "ready" | "error";
 
+function displayFileName(file: File) {
+  const name = file.name;
+  return typeof name === "string" && name.trim() && !name.includes("[object Object]")
+    ? name.trim()
+    : "Magica backup";
+}
+
 function haversine(a: DrivePoint, b: DrivePoint) {
   const rad = Math.PI / 180;
   const dLat = (b.lat - a.lat) * rad;
@@ -38,7 +45,7 @@ export default function Home() {
   const importFile = useCallback(async (file?: File) => {
     if (!file) return;
     setStatus("reading");
-    setFileName(file.name);
+    setFileName(displayFileName(file));
     setError("");
     try {
       const initSqlJs = (await import("sql.js")).default;
