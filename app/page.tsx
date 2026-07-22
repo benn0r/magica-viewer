@@ -5,7 +5,7 @@ import { useCallback, useRef, useState } from "react";
 
 const DriveMap = dynamic(() => import("./DriveMap"), {
   ssr: false,
-  loading: () => <div className="map-loading">Warming up the map…</div>,
+  loading: () => <div className="map-loading">Loading map…</div>,
 });
 
 export type DrivePoint = { lat: number; lng: number; t: number; trip: number };
@@ -86,69 +86,70 @@ export default function Home() {
     : "";
 
   return (
-    <main className="shell">
+    <main className="app-shell" id="top">
       <header className="topbar">
-        <a className="brand" href="#top" aria-label="Roadprint home">
-          <span className="brand-mark"><i /><i /><i /></span>
-          <span>roadprint</span>
-        </a>
-        <span className="privacy-note"><span className="privacy-dot" /> Your data stays in this browser</span>
+        <div className="brand">
+          <span className="brand-icon" aria-hidden="true">M</span>
+          <div><strong>Magica Viewer</strong><span>Drive history explorer</span></div>
+        </div>
+        <span className="privacy-note"><span className="privacy-dot" /> Local processing only</span>
       </header>
 
-      <section className="hero" id="top">
-        <div className="eyebrow"><span>MAGICA DRIVE VISUALIZER</span></div>
-        <h1>See the roads<br />you <em>really</em> drive.</h1>
-        <p className="lede">Turn your Magica backup into a living map of every journey. Brighter roads are the ones you return to most.</p>
+      <div className="viewer-layout">
+        <aside className="sidebar">
+          <section className="panel-section">
+            <h1>Drive history</h1>
+            <p>Open a Magica backup to view recorded routes and basic trip statistics.</p>
+            <div
+              className={`dropzone ${dragging ? "dragging" : ""} ${status === "error" ? "has-error" : ""}`}
+              onDragEnter={(e) => { e.preventDefault(); setDragging(true); }}
+              onDragOver={(e) => e.preventDefault()}
+              onDragLeave={() => setDragging(false)}
+              onDrop={(e) => { e.preventDefault(); setDragging(false); importFile(e.dataTransfer.files[0]); }}
+            >
+              <input ref={inputRef} type="file" accept=".magica,.sqlite,.sqlite3,.db" onChange={(e) => importFile(e.target.files?.[0])} />
+              <button className="upload-button" onClick={() => inputRef.current?.click()} disabled={status === "reading"}>
+                {status === "reading" ? "Reading backup…" : data ? "Open another file" : "Open Magica backup"}
+              </button>
+              <span className="drop-copy">or drag and drop a .magica file</span>
+              {status === "error" && <div className="error-copy" role="alert">{error}</div>}
+            </div>
+          </section>
 
-        <div
-          className={`dropzone ${dragging ? "dragging" : ""} ${status === "error" ? "has-error" : ""}`}
-          onDragEnter={(e) => { e.preventDefault(); setDragging(true); }}
-          onDragOver={(e) => e.preventDefault()}
-          onDragLeave={() => setDragging(false)}
-          onDrop={(e) => { e.preventDefault(); setDragging(false); importFile(e.dataTransfer.files[0]); }}
-        >
-          <input ref={inputRef} type="file" accept=".magica,.sqlite,.sqlite3,.db" onChange={(e) => importFile(e.target.files?.[0])} />
-          <button className="upload-button" onClick={() => inputRef.current?.click()} disabled={status === "reading"}>
-            <span className="upload-icon">↑</span>
-            {status === "reading" ? "Reading your drives…" : data ? "Choose another backup" : "Choose your Magica backup"}
-          </button>
-          <span className="drop-copy">or drop a .magica file here</span>
-          {status === "error" && <span className="error-copy">{error}</span>}
-        </div>
+          <section className="panel-section file-section">
+            <h2>Current file</h2>
+            {data ? <div className="file-card"><span className="file-badge">DB</span><div><strong>{fileName}</strong><span>{data.points.toLocaleString()} GPS points</span></div></div> : <p className="empty-copy">No backup opened</p>}
+          </section>
 
-        <div className="trust-row">
-          <span>◉ Processed locally</span><span>◇ No account needed</span><span>↯ Ready in seconds</span>
-        </div>
-      </section>
+          <section className="panel-section summary-section">
+            <h2>Summary</h2>
+            <dl className="stats">
+              <div><dt>Recorded drives</dt><dd>{data ? data.trips.toLocaleString() : "—"}</dd></div>
+              <div><dt>Distance traced</dt><dd>{data ? `${Math.round(data.distanceKm).toLocaleString()} km` : "—"}</dd></div>
+              <div><dt>GPS points</dt><dd>{data ? data.points.length.toLocaleString() : "—"}</dd></div>
+              <div><dt>History</dt><dd className="date-stat">{data ? dateRange : "—"}</dd></div>
+            </dl>
+          </section>
+          <div className="local-note"><span>✓</span><p><strong>Private by default</strong>Your backup is processed in this browser and is not uploaded.</p></div>
+        </aside>
 
-      <section className={`map-section ${data ? "loaded" : ""}`}>
-        <div className="map-heading">
-          <div>
-            <span className="section-kicker">YOUR ROADPRINT</span>
-            <h2>{data ? "Every drive, revealed." : "Your driving world, waiting."}</h2>
+        <section className="map-workspace" aria-label="Drive map viewer">
+          <div className="map-toolbar">
+            <div><h2>Map</h2><span>{data ? `${data.trips.toLocaleString()} recorded drives` : "No data loaded"}</span></div>
+            {data && <button className="change-file" onClick={() => inputRef.current?.click()}>Change file</button>}
           </div>
-          {data && <button className="change-file" onClick={() => inputRef.current?.click()}>↻ {fileName}</button>}
-        </div>
-
-        <div className="map-frame">
-          <DriveMap data={data} />
-          {!data && <div className="map-empty">
-            <div className="map-pin">⌁</div>
-            <strong>Your roads will glow here</strong>
-            <span>Upload a backup to trace your journeys across the world.</span>
-          </div>}
-          {data && <div className="legend"><span>LESS TRAVELLED</span><i /><i /><i /><i /><i /><span>MOST TRAVELLED</span></div>}
-        </div>
-
-        {data && <div className="stats">
-          <div><span>RECORDED DRIVES</span><strong>{data.trips.toLocaleString()}</strong></div>
-          <div><span>DISTANCE TRACED</span><strong>{Math.round(data.distanceKm).toLocaleString()} <small>km</small></strong></div>
-          <div><span>GPS POINTS</span><strong>{data.points.length.toLocaleString()}</strong></div>
-          <div><span>DRIVING HISTORY</span><strong className="date-stat">{dateRange}</strong></div>
-        </div>}
-      </section>
-
-      <footer><span>Built for Magica backups.</span><span>Nothing leaves your device.</span></footer>
+          <div className="map-frame">
+            <DriveMap data={data} />
+            {!data && <div className="map-empty">
+              <div className="map-pin" aria-hidden="true">⌖</div>
+              <strong>No drive data loaded</strong>
+              <span>Open a Magica backup from the panel to display your routes.</span>
+              <button onClick={() => inputRef.current?.click()}>Choose file</button>
+            </div>}
+            {data && <div className="legend"><span>Route density</span><i /><i /><i /><i /><i /><span>High</span></div>}
+          </div>
+        </section>
+      </div>
     </main>
   );
 }

@@ -8,10 +8,10 @@ export async function generateMetadata(): Promise<Metadata> {
   const protocol = requestHeaders.get("x-forwarded-proto") ?? (host.startsWith("localhost") ? "http" : "https");
   const image = `${protocol}://${host}/og.png`;
   return {
-    title: "Roadprint — Magica Drive Visualizer",
-    description: "Turn your Magica backup into a private heatmap of the roads you drive most.",
-    openGraph: { title: "Roadprint", description: "See the roads you really drive.", images: [image] },
-    twitter: { card: "summary_large_image", title: "Roadprint", description: "See the roads you really drive.", images: [image] },
+    title: "Magica Viewer — Drive History Explorer",
+    description: "Open a Magica backup and explore your recorded routes privately in your browser.",
+    openGraph: { title: "Magica Viewer", description: "View your Magica drive history on an interactive map.", images: [image] },
+    twitter: { card: "summary_large_image", title: "Magica Viewer", description: "View your Magica drive history on an interactive map.", images: [image] },
   };
 }
 
