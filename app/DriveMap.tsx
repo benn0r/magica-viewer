@@ -5,6 +5,37 @@ import L from "leaflet";
 import type { DriveData, DrivePoint } from "./page";
 import "leaflet/dist/leaflet.css";
 
+function distanceKm(a: DrivePoint, b: DrivePoint) {
+  const rad = Math.PI / 180;
+  const dLat = (b.lat - a.lat) * rad;
+  const dLng = (b.lng - a.lng) * rad;
+  const x = Math.sin(dLat / 2) ** 2 + Math.cos(a.lat * rad) * Math.cos(b.lat * rad) * Math.sin(dLng / 2) ** 2;
+  return 6371 * 2 * Math.atan2(Math.sqrt(x), Math.sqrt(1 - x));
+}
+
+function splitRoute(route: DrivePoint[]) {
+  const segments: DrivePoint[][] = [];
+  let segment: DrivePoint[] = [];
+
+  for (const point of route) {
+    const previous = segment.at(-1);
+    if (previous) {
+      const gapMs = point.t - previous.t;
+      const gapHours = gapMs / (60 * 60 * 1000);
+      const jumpKm = distanceKm(previous, point);
+      const implausibleJump = jumpKm > Math.max(1, gapHours * 180 + 0.5);
+      if (gapMs <= 0 || gapMs > 10 * 60 * 1000 || implausibleJump) {
+        if (segment.length > 1) segments.push(segment);
+        segment = [];
+      }
+    }
+    segment.push(point);
+  }
+
+  if (segment.length > 1) segments.push(segment);
+  return segments;
+}
+
 export default function DriveMap({ data }: { data: DriveData | null }) {
   const elementRef = useRef<HTMLDivElement>(null);
   const mapRef = useRef<L.Map | null>(null);
@@ -39,12 +70,13 @@ export default function DriveMap({ data }: { data: DriveData | null }) {
     }
     const allBounds: L.LatLngExpression[] = [];
     for (const route of routes.values()) {
-      if (route.length < 2) continue;
-      const reduced = route.filter((_, i) => i === 0 || i === route.length - 1 || i % 3 === 0);
-      const coords = reduced.map((p) => [p.lat, p.lng] as L.LatLngTuple);
-      allBounds.push(...coords.filter((_, i) => i % 20 === 0));
-      L.polyline(coords, { renderer: canvas, color: "#0d6efd", weight: 6, opacity: 0.08, lineCap: "round", lineJoin: "round", interactive: false }).addTo(group);
-      L.polyline(coords, { renderer: canvas, color: "#0d6efd", weight: 2.25, opacity: 0.35, lineCap: "round", lineJoin: "round", interactive: false }).addTo(group);
+      for (const segment of splitRoute(route)) {
+        const reduced = segment.filter((_, i) => i === 0 || i === segment.length - 1 || i % 3 === 0);
+        const coords = reduced.map((p) => [p.lat, p.lng] as L.LatLngTuple);
+        allBounds.push(...coords.filter((_, i) => i % 20 === 0));
+        L.polyline(coords, { renderer: canvas, color: "#0d6efd", weight: 6, opacity: 0.08, lineCap: "round", lineJoin: "round", interactive: false }).addTo(group);
+        L.polyline(coords, { renderer: canvas, color: "#0d6efd", weight: 2.25, opacity: 0.35, lineCap: "round", lineJoin: "round", interactive: false }).addTo(group);
+      }
     }
     if (allBounds.length) map.fitBounds(L.latLngBounds(allBounds), { padding: [34, 34], maxZoom: 12 });
   }, [data]);
