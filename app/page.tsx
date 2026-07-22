@@ -54,10 +54,12 @@ export default function Home() {
       const tables = db.exec("SELECT name FROM sqlite_master WHERE type='table' AND name='ZLOCATION'");
       if (!tables[0]?.values.length) throw new Error("This database does not contain Magica location data.");
       const result = db.exec(`
-        SELECT ZLATITUDE, ZLONGITUDE, ZTIMESTAMP, COALESCE(ZPERFORMANCE, 0)
+        SELECT ZLATITUDE, ZLONGITUDE, ZTIMESTAMP, ZPERFORMANCE
         FROM ZLOCATION
-        WHERE ZLATITUDE BETWEEN -90 AND 90 AND ZLONGITUDE BETWEEN -180 AND 180
-        ORDER BY COALESCE(ZPERFORMANCE, 0), ZTIMESTAMP
+        WHERE ZPERFORMANCE IS NOT NULL
+          AND ZLATITUDE BETWEEN -90 AND 90
+          AND ZLONGITUDE BETWEEN -180 AND 180
+        ORDER BY ZPERFORMANCE, ZTIMESTAMP, Z_PK
       `);
       db.close();
       if (!result[0]?.values.length) throw new Error("No recorded GPS locations were found in this backup.");
