@@ -2,6 +2,8 @@
 
 Magica Viewer is a browser-based explorer for Magica drive-history backups. It reads `.magica` SQLite files locally, plots recorded routes on an interactive map, and lists the available drive details.
 
+> This project is vibe coded with AI assistance.
+
 ## Development
 
 Requirements: Node.js 22.13 or newer.
@@ -25,3 +27,7 @@ Useful commands:
 - Cloudflare Worker production output
 
 Uploaded backups are processed in browser memory and are not sent to an application server.
+
+## License
+
+Magica Viewer is available under the [MIT License](LICENSE). You may freely use, modify, and distribute it, including for commercial purposes, provided the copyright and license notice are retained.
