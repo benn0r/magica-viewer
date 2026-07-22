@@ -1,7 +1,7 @@
 "use client";
 
 import dynamic from "next/dynamic";
-import { useCallback, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 
 const DriveMap = dynamic(() => import("./DriveMap"), {
   ssr: false,
@@ -70,6 +70,8 @@ function haversine(a: DrivePoint, b: DrivePoint) {
 
 export default function Home() {
   const inputRef = useRef<HTMLInputElement>(null);
+  const driveListRef = useRef<HTMLDivElement>(null);
+  const driveListScrollTopRef = useRef(0);
   const [status, setStatus] = useState<Status>("idle");
   const [data, setData] = useState<DriveData | null>(null);
   const [fileName, setFileName] = useState("");
@@ -77,6 +79,12 @@ export default function Home() {
   const [dragging, setDragging] = useState(false);
   const [activeView, setActiveView] = useState<ActiveView>("map");
   const [selectedTrip, setSelectedTrip] = useState<number | null>(null);
+
+  useEffect(() => {
+    if (activeView === "list" && driveListRef.current) {
+      driveListRef.current.scrollTop = driveListScrollTopRef.current;
+    }
+  }, [activeView]);
 
   const importFile = useCallback(async (file?: File) => {
     if (!file) return;
@@ -169,6 +177,7 @@ export default function Home() {
         ignoredPoints: Math.max(0, totalPoints - points.length),
       });
       setSelectedTrip(null);
+      driveListScrollTopRef.current = 0;
       setActiveView("map");
       setStatus("ready");
     } catch (err) {
@@ -254,7 +263,11 @@ export default function Home() {
                 <div><strong>Recorded drives</strong><span>Select a drive to focus it on the map.</span></div>
                 <span>{data?.drives.length.toLocaleString()} drives</span>
               </div>
-              <div className="drive-list">
+              <div
+                ref={driveListRef}
+                className="drive-list"
+                onScroll={(event) => { driveListScrollTopRef.current = event.currentTarget.scrollTop; }}
+              >
                 {data?.drives.map((drive) => <button
                   key={drive.id}
                   className={`drive-row ${selectedTrip === drive.id ? "selected" : ""}`}
