@@ -125,22 +125,24 @@ export default function Home() {
       const totalResult = db.exec("SELECT COUNT(*) FROM ZLOCATION");
       const totalPoints = Number(totalResult[0]?.values[0]?.[0] ?? 0);
       const driveResult = db.exec(`
-        SELECT Z_PK, ZSTARTDATE, ZENDDATE, ZTOTALDISTANCE,
-          ZSTARTADDRESSCITY, ZENDADDRESSCITY, ZAVERAGESPEED,
-          ZMAXSPEED, ZDRIVINGSCORE, ZNOTE, ZFORECASTSTATE,
-          ZFORECASTTEMPERATURE, ZTRIPCONSUMPTIONUNITS,
-          ZTRIPCONSUMPTIONCOST, ZCO2, ZODOMETERSTART, ZODOMETEREND,
+        SELECT performance.Z_PK, performance.ZSTARTDATE, performance.ZENDDATE,
+          performance.ZTOTALDISTANCE, performance.ZSTARTADDRESSCITY,
+          performance.ZENDADDRESSCITY, performance.ZAVERAGESPEED,
+          performance.ZMAXSPEED, performance.ZDRIVINGSCORE, performance.ZNOTE,
+          performance.ZFORECASTSTATE, performance.ZFORECASTTEMPERATURE,
+          performance.ZTRIPCONSUMPTIONUNITS, performance.ZTRIPCONSUMPTIONCOST,
+          performance.ZCO2, performance.ZODOMETERSTART, performance.ZODOMETEREND,
           COALESCE(start_place.ZNAME, ''), COALESCE(end_place.ZNAME, ''),
           COALESCE((
             SELECT GROUP_CONCAT(tag.ZTITLE, '|')
             FROM Z_13TAGS link
             JOIN ZTAG tag ON tag.Z_PK = link.Z_15TAGS1
-            WHERE link.Z_13PERFORMANCES = ZPERFORMANCE.Z_PK
+            WHERE link.Z_13PERFORMANCES = performance.Z_PK
           ), '')
-        FROM ZPERFORMANCE
-        LEFT JOIN ZPLACE start_place ON start_place.Z_PK = ZPERFORMANCE.ZSTARTPLACE
-        LEFT JOIN ZPLACE end_place ON end_place.Z_PK = ZPERFORMANCE.ZENDPLACE
-        ORDER BY ZSTARTDATE DESC
+        FROM ZPERFORMANCE AS performance
+        LEFT JOIN ZPLACE start_place ON start_place.Z_PK = performance.ZSTARTPLACE
+        LEFT JOIN ZPLACE end_place ON end_place.Z_PK = performance.ZENDPLACE
+        ORDER BY performance.ZSTARTDATE DESC
       `);
       const placeResult = db.exec("SELECT Z_PK, ZNAME, ZADDRESS, ZLATITUDE, ZLONGITUDE FROM ZPLACE ORDER BY ZNAME");
       const fuelResult = db.exec(`
