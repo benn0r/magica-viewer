@@ -5,7 +5,7 @@ import L from "leaflet";
 import type { DriveData, DrivePoint } from "./page";
 import "leaflet/dist/leaflet.css";
 
-export default function DriveMap({ data, selectedTrip }: { data: DriveData | null; selectedTrip: number | null }) {
+export default function DriveMap({ data, selectedTrip, showPlaces }: { data: DriveData | null; selectedTrip: number | null; showPlaces: boolean }) {
   const elementRef = useRef<HTMLDivElement>(null);
   const mapRef = useRef<L.Map | null>(null);
   const layerRef = useRef<L.LayerGroup | null>(null);
@@ -49,10 +49,31 @@ export default function DriveMap({ data, selectedTrip }: { data: DriveData | nul
       const isDimmed = selectedTrip !== null && !isSelected;
       L.polyline(coords, { renderer: canvas, color: "#0d6efd", weight: isSelected ? 9 : 6, opacity: isSelected ? 0.16 : isDimmed ? 0.025 : 0.08, lineCap: "round", lineJoin: "round", interactive: false }).addTo(group);
       L.polyline(coords, { renderer: canvas, color: "#0d6efd", weight: isSelected ? 4 : 2.25, opacity: isSelected ? 0.9 : isDimmed ? 0.09 : 0.35, lineCap: "round", lineJoin: "round", interactive: false }).addTo(group);
+      if (isSelected) {
+        L.circleMarker(coords[0], { radius: 6, color: "#fff", weight: 2, fillColor: "#198754", fillOpacity: 1 }).bindTooltip("Start").addTo(group);
+        L.circleMarker(coords.at(-1)!, { radius: 6, color: "#fff", weight: 2, fillColor: "#dc3545", fillOpacity: 1 }).bindTooltip("Destination").addTo(group);
+      }
+    }
+    if (showPlaces) {
+      for (const place of data.places) {
+        if (!Number.isFinite(place.lat) || !Number.isFinite(place.lng)) continue;
+        const tooltip = document.createElement("div");
+        const name = document.createElement("strong");
+        name.textContent = place.name;
+        tooltip.append(name);
+        if (place.address) {
+          const address = document.createElement("div");
+          address.textContent = place.address;
+          tooltip.append(address);
+        }
+        L.circleMarker([place.lat, place.lng], { radius: 5, color: "#fff", weight: 2, fillColor: "#6f42c1", fillOpacity: 0.9 })
+          .bindTooltip(tooltip)
+          .addTo(group);
+      }
     }
     const bounds = selectedBounds.length ? selectedBounds : allBounds;
     if (bounds.length) map.fitBounds(L.latLngBounds(bounds), { padding: [34, 34], maxZoom: selectedBounds.length ? 15 : 12 });
-  }, [data, selectedTrip]);
+  }, [data, selectedTrip, showPlaces]);
 
   return <div ref={elementRef} className="leaflet-host" aria-label="Interactive map of recorded drives" />;
 }

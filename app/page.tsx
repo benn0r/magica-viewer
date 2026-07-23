@@ -1,7 +1,8 @@
 "use client";
 
 import dynamic from "next/dynamic";
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import StatisticsView from "./StatisticsView";
 
 const DriveMap = dynamic(() => import("./DriveMap"), {
   ssr: false,
@@ -20,7 +21,20 @@ export type DriveDetails = {
   maxSpeedKmh: number;
   score: number;
   note: string;
+  weather: string;
+  temperatureC: number;
+  consumptionUnits: number;
+  consumptionCost: number;
+  co2Kg: number;
+  odometerStart: number;
+  odometerEnd: number;
+  startPlace: string;
+  endPlace: string;
+  tags: string[];
 };
+export type SavedPlace = { id: number; name: string; address: string; lat: number; lng: number };
+export type FuelEntry = { id: number; amount: number; cost: number; pricePerUnit: number };
+export type OdometerEntry = { date: number; value: number };
 export type DriveData = {
   points: DrivePoint[];
   drives: DriveDetails[];
@@ -31,10 +45,13 @@ export type DriveData = {
   totalPoints: number;
   recoveredPoints: number;
   ignoredPoints: number;
+  places: SavedPlace[];
+  fuelEntries: FuelEntry[];
+  odometerEntries: OdometerEntry[];
 };
 
 type Status = "idle" | "reading" | "ready" | "error";
-type ActiveView = "map" | "list";
+type ActiveView = "map" | "list" | "statistics";
 
 const driveDateFormatter = new Intl.DateTimeFormat("en", {
   weekday: "short", day: "numeric", month: "short", year: "numeric",
@@ -79,6 +96,14 @@ export default function Home() {
   const [dragging, setDragging] = useState(false);
   const [activeView, setActiveView] = useState<ActiveView>("map");
   const [selectedTrip, setSelectedTrip] = useState<number | null>(null);
+  const [showPlaces, setShowPlaces] = useState(true);
+  const [search, setSearch] = useState("");
+  const [weatherFilter, setWeatherFilter] = useState("");
+  const [placeFilter, setPlaceFilter] = useState("");
+  const [minimumDistance, setMinimumDistance] = useState("");
+  const [minimumScore, setMinimumScore] = useState("");
+  const [dateFrom, setDateFrom] = useState("");
+  const [dateTo, setDateTo] = useState("");
 
   useEffect(() => {
     if (activeView === "list" && driveListRef.current) {
@@ -102,10 +127,31 @@ export default function Home() {
       const driveResult = db.exec(`
         SELECT Z_PK, ZSTARTDATE, ZENDDATE, ZTOTALDISTANCE,
           ZSTARTADDRESSCITY, ZENDADDRESSCITY, ZAVERAGESPEED,
-          ZMAXSPEED, ZDRIVINGSCORE, ZNOTE
+          ZMAXSPEED, ZDRIVINGSCORE, ZNOTE, ZFORECASTSTATE,
+          ZFORECASTTEMPERATURE, ZTRIPCONSUMPTIONUNITS,
+          ZTRIPCONSUMPTIONCOST, ZCO2, ZODOMETERSTART, ZODOMETEREND,
+          COALESCE(start_place.ZNAME, ''), COALESCE(end_place.ZNAME, ''),
+          COALESCE((
+            SELECT GROUP_CONCAT(tag.ZTITLE, '|')
+            FROM Z_13TAGS link
+            JOIN ZTAG tag ON tag.Z_PK = link.Z_15TAGS1
+            WHERE link.Z_13PERFORMANCES = ZPERFORMANCE.Z_PK
+          ), '')
         FROM ZPERFORMANCE
+        LEFT JOIN ZPLACE start_place ON start_place.Z_PK = ZPERFORMANCE.ZSTARTPLACE
+        LEFT JOIN ZPLACE end_place ON end_place.Z_PK = ZPERFORMANCE.ZENDPLACE
         ORDER BY ZSTARTDATE DESC
       `);
+      const placeResult = db.exec("SELECT Z_PK, ZNAME, ZADDRESS, ZLATITUDE, ZLONGITUDE FROM ZPLACE ORDER BY ZNAME");
+      const fuelResult = db.exec(`
+        SELECT object.Z_PK, object.ZFUELAMOUNT, object.ZFUELAMOUNTCOST,
+          CASE WHEN object.ZFUELAMOUNT > 0 THEN object.ZFUELAMOUNTCOST / object.ZFUELAMOUNT ELSE 0 END
+        FROM ZBASECOREDATAOBJECT object
+        JOIN Z_PRIMARYKEY entity ON entity.Z_ENT = object.Z_ENT
+        WHERE entity.Z_NAME = 'Supply' AND object.ZFUELAMOUNT > 0
+        ORDER BY object.Z_PK DESC
+      `);
+      const odometerResult = db.exec("SELECT ZDATE, ZVALUE FROM ZODOMETERLOG WHERE ZDATE IS NOT NULL AND ZVALUE IS NOT NULL ORDER BY ZDATE");
       const result = db.exec(`
         WITH resolved_locations AS (
           SELECT
@@ -146,6 +192,26 @@ export default function Home() {
         maxSpeedKmh: Number(row[7] ?? 0) * 3.6,
         score: Number(row[8] ?? 0),
         note: String(row[9] ?? ""),
+        weather: String(row[10] ?? ""),
+        temperatureC: Number(row[11] ?? 0),
+        consumptionUnits: Number(row[12] ?? 0),
+        consumptionCost: Number(row[13] ?? 0),
+        co2Kg: Number(row[14] ?? 0) / 1000,
+        odometerStart: Number(row[15] ?? 0),
+        odometerEnd: Number(row[16] ?? 0),
+        startPlace: String(row[17] ?? ""),
+        endPlace: String(row[18] ?? ""),
+        tags: String(row[19] ?? "").split("|").filter(Boolean),
+      }));
+      const places: SavedPlace[] = (placeResult[0]?.values ?? []).map((row) => ({
+        id: Number(row[0]), name: String(row[1] ?? ""), address: String(row[2] ?? ""),
+        lat: Number(row[3]), lng: Number(row[4]),
+      }));
+      const fuelEntries: FuelEntry[] = (fuelResult[0]?.values ?? []).map((row) => ({
+        id: Number(row[0]), amount: Number(row[1] ?? 0), cost: Number(row[2] ?? 0), pricePerUnit: Number(row[3] ?? 0),
+      }));
+      const odometerEntries: OdometerEntry[] = (odometerResult[0]?.values ?? []).map((row) => ({
+        date: (Number(row[0]) + 978307200) * 1000, value: Number(row[1]),
       }));
       const points: DrivePoint[] = [];
       let distanceKm = 0;
@@ -175,10 +241,14 @@ export default function Home() {
         totalPoints,
         recoveredPoints,
         ignoredPoints: Math.max(0, totalPoints - points.length),
+        places,
+        fuelEntries,
+        odometerEntries,
       });
       setSelectedTrip(null);
       driveListScrollTopRef.current = 0;
       setActiveView("map");
+      setSearch(""); setWeatherFilter(""); setPlaceFilter(""); setMinimumDistance(""); setMinimumScore(""); setDateFrom(""); setDateTo("");
       setStatus("ready");
     } catch (err) {
       setStatus("error");
@@ -190,6 +260,24 @@ export default function Home() {
   const dateRange = data
     ? `${new Intl.DateTimeFormat("en", { month: "short", year: "numeric" }).format(data.firstDate)} — ${new Intl.DateTimeFormat("en", { month: "short", year: "numeric" }).format(data.lastDate)}`
     : "";
+  const selectedDrive = data?.drives.find((drive) => drive.id === selectedTrip) ?? null;
+  const weatherOptions = useMemo(() => Array.from(new Set(data?.drives.map((drive) => drive.weather).filter(Boolean) ?? [])).sort(), [data]);
+  const filteredDrives = useMemo(() => {
+    if (!data) return [];
+    const from = dateFrom ? new Date(`${dateFrom}T00:00:00`).getTime() : -Infinity;
+    const to = dateTo ? new Date(`${dateTo}T23:59:59`).getTime() : Infinity;
+    const query = search.trim().toLowerCase();
+    return data.drives.filter((drive) => {
+      const scorePercent = drive.score <= 1 ? drive.score * 100 : drive.score;
+      const haystack = [drive.startCity, drive.endCity, drive.startPlace, drive.endPlace, drive.weather, ...drive.tags].join(" ").toLowerCase();
+      return (!query || haystack.includes(query))
+        && (!weatherFilter || drive.weather === weatherFilter)
+        && (!placeFilter || drive.startPlace === placeFilter || drive.endPlace === placeFilter)
+        && drive.distanceKm >= Number(minimumDistance || 0)
+        && scorePercent >= Number(minimumScore || 0)
+        && drive.startDate >= from && drive.startDate <= to;
+    });
+  }, [data, dateFrom, dateTo, minimumDistance, minimumScore, placeFilter, search, weatherFilter]);
 
   return (
     <main className="app-shell" id="top">
@@ -245,12 +333,14 @@ export default function Home() {
             <div className="view-tabs" role="tablist" aria-label="Drive views">
               <button role="tab" aria-selected={activeView === "map"} className={activeView === "map" ? "active" : ""} onClick={() => setActiveView("map")}>Map</button>
               <button role="tab" aria-selected={activeView === "list"} className={activeView === "list" ? "active" : ""} onClick={() => setActiveView("list")} disabled={!data}>List</button>
+              <button role="tab" aria-selected={activeView === "statistics"} className={activeView === "statistics" ? "active" : ""} onClick={() => setActiveView("statistics")} disabled={!data}>Statistics</button>
             </div>
             <span className="toolbar-summary">{data ? `${data.trips.toLocaleString()} recorded drives` : "No data loaded"}</span>
+            {data && activeView === "map" && <label className="place-toggle"><input type="checkbox" checked={showPlaces} onChange={(event) => setShowPlaces(event.target.checked)} /> Places</label>}
             {data && <button className="change-file" onClick={() => inputRef.current?.click()}>Change file</button>}
           </div>
           {activeView === "map" ? <div className="map-frame" role="tabpanel">
-              <DriveMap data={data} selectedTrip={selectedTrip} />
+              <DriveMap data={data} selectedTrip={selectedTrip} showPlaces={showPlaces} />
               {!data && <div className="map-empty">
                 <div className="map-pin" aria-hidden="true">⌖</div>
                 <strong>No drive data loaded</strong>
@@ -258,17 +348,47 @@ export default function Home() {
                 <button onClick={() => inputRef.current?.click()}>Choose file</button>
               </div>}
               {data && <div className="legend"><span>Route density</span><i /><i /><i /><i /><i /><span>High</span></div>}
+              {selectedDrive && <aside className="drive-detail-card" aria-label="Selected drive details">
+                <button className="detail-close" aria-label="Close drive details" onClick={() => setSelectedTrip(null)}>×</button>
+                <span className="detail-date">{driveDateFormatter.format(selectedDrive.startDate)}</span>
+                <h3>{selectedDrive.startPlace || selectedDrive.startCity || "Unknown start"} <span>→</span> {selectedDrive.endPlace || selectedDrive.endCity || "Unknown destination"}</h3>
+                <dl className="detail-grid">
+                  <div><dt>Distance</dt><dd>{selectedDrive.distanceKm.toFixed(1)} km</dd></div>
+                  <div><dt>Duration</dt><dd>{formatDuration(selectedDrive.startDate, selectedDrive.endDate)}</dd></div>
+                  <div><dt>Average</dt><dd>{Math.round(selectedDrive.averageSpeedKmh)} km/h</dd></div>
+                  <div><dt>Maximum</dt><dd>{Math.round(selectedDrive.maxSpeedKmh)} km/h</dd></div>
+                  <div><dt>Score</dt><dd>{formatScore(selectedDrive.score)}</dd></div>
+                  <div><dt>Weather</dt><dd>{selectedDrive.weather || "—"}{selectedDrive.temperatureC ? `, ${Math.round(selectedDrive.temperatureC)}°C` : ""}</dd></div>
+                  <div><dt>Consumption</dt><dd>{selectedDrive.consumptionUnits.toFixed(2)}</dd></div>
+                  <div><dt>Fuel cost</dt><dd>CHF {selectedDrive.consumptionCost.toFixed(2)}</dd></div>
+                  <div><dt>CO₂</dt><dd>{selectedDrive.co2Kg.toFixed(2)} kg</dd></div>
+                  <div><dt>Odometer</dt><dd>{selectedDrive.odometerStart.toFixed(0)} → {selectedDrive.odometerEnd.toFixed(0)} km</dd></div>
+                </dl>
+                {selectedDrive.tags.length > 0 && <div className="detail-tags">{selectedDrive.tags.map((tag) => <span key={tag}>{tag}</span>)}</div>}
+                {selectedDrive.note && <p>{selectedDrive.note}</p>}
+              </aside>}
             </div> : <div className="drive-list-frame" role="tabpanel">
+              {activeView === "statistics" && data ? <StatisticsView data={data} /> : <>
               <div className="drive-list-header">
                 <div><strong>Recorded drives</strong><span>Select a drive to focus it on the map.</span></div>
-                <span>{data?.drives.length.toLocaleString()} drives</span>
+                <span>{filteredDrives.length.toLocaleString()} of {data?.drives.length.toLocaleString()} drives</span>
+              </div>
+              <div className="drive-filters">
+                <input aria-label="Search drives" placeholder="Search city, place or tag" value={search} onChange={(event) => setSearch(event.target.value)} />
+                <input aria-label="From date" type="date" value={dateFrom} onChange={(event) => setDateFrom(event.target.value)} />
+                <input aria-label="To date" type="date" value={dateTo} onChange={(event) => setDateTo(event.target.value)} />
+                <select aria-label="Weather" value={weatherFilter} onChange={(event) => setWeatherFilter(event.target.value)}><option value="">All weather</option>{weatherOptions.map((weather) => <option key={weather}>{weather}</option>)}</select>
+                <select aria-label="Saved place" value={placeFilter} onChange={(event) => setPlaceFilter(event.target.value)}><option value="">All places</option>{data?.places.map((place) => <option key={place.id} value={place.name}>{place.name}</option>)}</select>
+                <input aria-label="Minimum distance" type="number" min="0" placeholder="Min km" value={minimumDistance} onChange={(event) => setMinimumDistance(event.target.value)} />
+                <input aria-label="Minimum score" type="number" min="0" max="100" placeholder="Min score" value={minimumScore} onChange={(event) => setMinimumScore(event.target.value)} />
+                <button onClick={() => { setSearch(""); setWeatherFilter(""); setPlaceFilter(""); setMinimumDistance(""); setMinimumScore(""); setDateFrom(""); setDateTo(""); }}>Clear</button>
               </div>
               <div
                 ref={driveListRef}
                 className="drive-list"
                 onScroll={(event) => { driveListScrollTopRef.current = event.currentTarget.scrollTop; }}
               >
-                {data?.drives.map((drive) => <button
+                {filteredDrives.map((drive) => <button
                   key={drive.id}
                   className={`drive-row ${selectedTrip === drive.id ? "selected" : ""}`}
                   onClick={() => { setSelectedTrip(drive.id); setActiveView("map"); }}
@@ -284,6 +404,7 @@ export default function Home() {
                   </span>
                 </button>)}
               </div>
+              </>}
             </div>}
         </section>
       </div>
