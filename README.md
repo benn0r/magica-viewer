@@ -28,6 +28,38 @@ Useful commands:
 
 Uploaded backups are processed in browser memory and are not sent to an application server.
 
+## Docker
+
+Build and run the same image used in production:
+
+```bash
+docker build -t magica-viewer .
+docker run --rm -p 3000:3000 magica-viewer
+```
+
+The container listens on port `3000` and includes an HTTP health check against
+`GET /`.
+
+## Coolify deployment
+
+Gitea Actions tests every change and publishes a Docker image for each pushed
+branch to:
+
+```text
+gitea.example.com/contributor/magica-viewer
+```
+
+Branch names are normalized into valid image tags, so `main` is published as
+`gitea.example.com/contributor/magica-viewer:main`. Configure the Coolify application
+as a **Docker Image** resource using that image and tag, expose port `3000`, and
+enable the `GET /` health check. Add a repository Actions secret named
+`REGISTRY_TOKEN` containing a Gitea personal access token with package
+read/write permission.
+
+When a branch is deleted or its pull request is merged, its image is removed.
+After a successful `main` build, obsolete package versions are removed, leaving
+only the production image.
+
 ## License
 
 Magica Viewer is available under the [MIT License](LICENSE). You may freely use, modify, and distribute it, including for commercial purposes, provided the copyright and license notice are retained.

@@ -1,0 +1,9 @@
+.git
+.gitea
+.next
+.openai
+.wrangler
+dist
+node_modules
+npm-debug.log*
+.DS_Store

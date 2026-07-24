@@ -10,7 +10,7 @@ on:
   workflow_dispatch:
 
 jobs:
-  build:
+  test:
     runs-on: ubuntu-latest-slim
     container: node:22.13.0-bookworm
     timeout-minutes: 15
@@ -22,8 +22,64 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
-      - name: Lint
-        run: npm run lint
+      - name: Test
+        run: npm test
 
-      - name: Build
-        run: npm run build
+  publish-image:
+    if: gitea.event_name == 'push' && startsWith(gitea.ref, 'refs/heads/')
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    permissions:
+      contents: read
+      packages: write
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Install Docker CLI
+        shell: sh
+        run: |
+          apt-get update
+          apt-get install --yes curl docker.io jq
+          docker version
+
+      - name: Log in to Gitea Container Registry
+        uses: docker/login-action@v3
+        with:
+          registry: gitea.example.com
+          username: contributor
+          password: ${{ secrets.REGISTRY_TOKEN }}
+
+      - name: Build and push image
+        shell: sh
+        env:
+          IMAGE_BRANCH: ${{ gitea.ref_name }}
+        run: |
+          image="gitea.example.com/contributor/magica-viewer"
+          branch_tag="$(printf '%s' "${IMAGE_BRANCH}" \
+            | tr '[:upper:]' '[:lower:]' \
+            | sed 's#[^a-z0-9_.-]#-#g')"
+
+          docker build --tag "${image}:${branch_tag}" .
+          docker push "${image}:${branch_tag}"
+
+      - name: Remove obsolete package versions
+        if: gitea.ref == 'refs/heads/main'
+        shell: sh
+        env:
+          REGISTRY_TOKEN: ${{ secrets.REGISTRY_TOKEN }}
+        run: |
+          versions="$(curl --fail --silent --show-error \
+            --header "Authorization: token ${REGISTRY_TOKEN}" \
+            "https://gitea.example.com/api/v1/packages/contributor?type=container&q=magica-viewer&limit=100")"
+
+          printf '%s' "${versions}" \
+            | jq -r '.[] | select(.name == "magica-viewer" and .version != "main") | .version' \
+            | while IFS= read -r version; do
+                status="$(curl --silent --output /dev/null --write-out '%{http_code}' \
+                  --request DELETE \
+                  --header "Authorization: token ${REGISTRY_TOKEN}" \
+                  "https://gitea.example.com/api/v1/packages/contributor/container/magica-viewer/${version}")"
+                [ "${status}" = "204" ] || [ "${status}" = "404" ]
+              done
