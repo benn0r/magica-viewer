@@ -341,7 +341,7 @@ export default function Home() {
             {data && activeView === "map" && <label className="place-toggle"><input type="checkbox" checked={showPlaces} onChange={(event) => setShowPlaces(event.target.checked)} /> Places</label>}
             {data && <button className="change-file" onClick={() => inputRef.current?.click()}>Change file</button>}
           </div>
-          {activeView === "map" ? <div className="map-frame" role="tabpanel">
+          {activeView === "map" ? <div className={`map-frame${data ? "" : " is-empty"}`} role="tabpanel">
               <DriveMap data={data} selectedTrip={selectedTrip} showPlaces={showPlaces} />
               {!data && <div className="map-empty">
                 <div className="map-pin" aria-hidden="true">⌖</div>
