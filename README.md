@@ -56,6 +56,13 @@ enable the `GET /` health check. Add a repository Actions secret named
 `REGISTRY_TOKEN` containing a Gitea personal access token with package
 read/write permission.
 
+The persistence staging branch is published as
+`gitea.example.com/contributor/magica-viewer:codex-sqlite-persistence-staging`.
+Configure a separate Coolify application for this tag and attach persistent
+storage at `/data`. The SQLite database is stored at
+`/data/magica-viewer.sqlite`; without the mounted volume, imported history will
+be lost when Coolify replaces the container.
+
 When a branch is deleted or its pull request is merged, its image is removed.
 After a successful `main` build, obsolete package versions are removed, leaving
 only the production image.

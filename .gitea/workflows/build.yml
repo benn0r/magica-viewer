@@ -75,7 +75,11 @@ jobs:
             "https://gitea.example.com/api/v1/packages/contributor?type=container&q=magica-viewer&limit=100")"
 
           printf '%s' "${versions}" \
-            | jq -r '.[] | select(.name == "magica-viewer" and .version != "main") | .version' \
+            | jq -r '.[] | select(
+                .name == "magica-viewer"
+                and .version != "main"
+                and .version != "codex-sqlite-persistence-staging"
+              ) | .version' \
             | while IFS= read -r version; do
                 status="$(curl --silent --output /dev/null --write-out '%{http_code}' \
                   --request DELETE \
