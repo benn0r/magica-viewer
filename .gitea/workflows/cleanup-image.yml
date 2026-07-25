@@ -20,6 +20,8 @@ jobs:
         shell: sh
         env:
           BRANCH_NAME: ${{ gitea.event.ref }}
+          GITEA_REPOSITORY_OWNER: ${{ gitea.repository_owner }}
+          GITEA_SERVER_URL: ${{ gitea.server_url }}
           REGISTRY_TOKEN: ${{ secrets.REGISTRY_TOKEN }}
         run: |
           branch_name="${BRANCH_NAME#refs/heads/}"
@@ -29,7 +31,7 @@ jobs:
           status="$(curl --silent --output /dev/null --write-out '%{http_code}' \
             --request DELETE \
             --header "Authorization: token ${REGISTRY_TOKEN}" \
-            "https://gitea.example.com/api/v1/packages/contributor/container/magica-viewer/${branch_tag}")"
+            "${GITEA_SERVER_URL}/api/v1/packages/${GITEA_REPOSITORY_OWNER}/container/magica-viewer/${branch_tag}")"
           [ "${status}" = "204" ] || [ "${status}" = "404" ]
 
   merged-branch:
@@ -45,6 +47,8 @@ jobs:
         shell: sh
         env:
           BRANCH_NAME: ${{ gitea.event.pull_request.head.ref }}
+          GITEA_REPOSITORY_OWNER: ${{ gitea.repository_owner }}
+          GITEA_SERVER_URL: ${{ gitea.server_url }}
           REGISTRY_TOKEN: ${{ secrets.REGISTRY_TOKEN }}
         run: |
           branch_name="${BRANCH_NAME#refs/heads/}"
@@ -54,5 +58,5 @@ jobs:
           status="$(curl --silent --output /dev/null --write-out '%{http_code}' \
             --request DELETE \
             --header "Authorization: token ${REGISTRY_TOKEN}" \
-            "https://gitea.example.com/api/v1/packages/contributor/container/magica-viewer/${branch_tag}")"
+            "${GITEA_SERVER_URL}/api/v1/packages/${GITEA_REPOSITORY_OWNER}/container/magica-viewer/${branch_tag}")"
           [ "${status}" = "204" ] || [ "${status}" = "404" ]

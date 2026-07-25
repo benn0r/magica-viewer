@@ -40,28 +40,20 @@ docker run --rm -p 3000:3000 magica-viewer
 The container listens on port `3000` and includes an HTTP health check against
 `GET /`.
 
-## Coolify deployment
+## Container deployment
 
 Gitea Actions tests every change and publishes a Docker image for each pushed
-branch to:
+branch to the repository owner's container registry. Branch names are normalized
+into valid image tags, so the production image uses the `main` tag.
 
-```text
-gitea.example.com/contributor/magica-viewer
-```
-
-Branch names are normalized into valid image tags, so `main` is published as
-`gitea.example.com/contributor/magica-viewer:main`. Configure the Coolify application
-as a **Docker Image** resource using that image and tag, expose port `3000`, and
+Configure the deployment platform to run that image, expose port `3000`, and
 enable the `GET /` health check. Add a repository Actions secret named
 `REGISTRY_TOKEN` containing a Gitea personal access token with package
 read/write permission.
 
-The persistence staging branch is published as
-`gitea.example.com/contributor/magica-viewer:codex-sqlite-persistence-staging`.
-Configure a separate Coolify application for this tag and attach persistent
-storage at `/data`. The SQLite database is stored at
+Attach persistent storage at `/data`. The SQLite database is stored at
 `/data/magica-viewer.sqlite`; without the mounted volume, imported history will
-be lost when Coolify replaces the container.
+be lost when the container is replaced.
 
 When a branch is deleted or its pull request is merged, its image is removed.
 After a successful `main` build, obsolete package versions are removed, leaving
