@@ -9,7 +9,7 @@ const DriveMap = dynamic(() => import("./DriveMap"), {
   loading: () => <div className="map-loading">Loading map…</div>,
 });
 
-export type DrivePoint = { lat: number; lng: number; t: number; trip: number };
+export type DrivePoint = { lat: number; lng: number; t: number; trip: number; recovered?: boolean };
 export type DriveDetails = {
   id: number;
   startDate: number;
@@ -50,7 +50,7 @@ export type DriveData = {
   odometerEntries: OdometerEntry[];
 };
 
-type Status = "idle" | "reading" | "ready" | "error";
+type Status = "idle" | "reading" | "syncing" | "ready" | "error";
 type ActiveView = "map" | "list" | "statistics";
 
 const driveDateFormatter = new Intl.DateTimeFormat("en", {
@@ -104,6 +104,70 @@ export default function Home() {
   const [minimumScore, setMinimumScore] = useState("");
   const [dateFrom, setDateFrom] = useState("");
   const [dateTo, setDateTo] = useState("");
+
+  const loadPersistedData = useCallback(async () => {
+    const response = await fetch("/api/data");
+    if (!response.ok) throw new Error("Saved drive data could not be loaded.");
+    const saved = await response.json() as DriveData;
+    if (!saved.points?.length) return null;
+    saved.points.sort((a, b) => a.trip - b.trip || a.t - b.t);
+    saved.drives.sort((a, b) => b.startDate - a.startDate);
+    let distanceKm = 0;
+    let previous: DrivePoint | null = null;
+    for (const point of saved.points) {
+      if (previous?.trip === point.trip) {
+        const gap = point.t - previous.t;
+        const distance = haversine(previous, point);
+        if (gap >= 0 && gap < 60 * 60 * 1000 && distance < 20) distanceKm += distance;
+      }
+      previous = point;
+    }
+    const dates = saved.points.map((point) => point.t);
+    return {
+      ...saved,
+      trips: new Set(saved.points.map((point) => point.trip)).size,
+      distanceKm,
+      firstDate: Math.min(...dates),
+      lastDate: Math.max(...dates),
+      totalPoints: saved.points.length + Number(saved.ignoredPoints || 0),
+      recoveredPoints: saved.points.filter((point) => point.recovered).length,
+    };
+  }, []);
+
+  useEffect(() => {
+    loadPersistedData()
+      .then((saved) => {
+        if (saved) {
+          setData(saved);
+          setFileName("Persistent SQLite history");
+          setStatus("ready");
+        } else {
+          setStatus("idle");
+        }
+      })
+      .catch(() => setStatus("idle"));
+  }, [loadPersistedData]);
+
+  const syncData = useCallback(async (nextData: DriveData) => {
+    const collections = {
+      drives: nextData.drives.map((value) => ({ key: String(value.startDate), value })),
+      points: nextData.points.map((value) => ({ key: `${value.t}:${value.lat.toFixed(6)}:${value.lng.toFixed(6)}`, value })),
+      places: nextData.places.map((value) => ({ key: `${value.name}:${value.lat.toFixed(6)}:${value.lng.toFixed(6)}`, value })),
+      fuelEntries: nextData.fuelEntries.map((value) => ({ key: String(value.id), value })),
+      odometerEntries: nextData.odometerEntries.map((value) => ({ key: `${value.date}:${value.value}`, value })),
+      summary: [{ key: "latest", value: { ignoredPoints: nextData.ignoredPoints } }],
+    };
+    for (const [kind, records] of Object.entries(collections)) {
+      for (let offset = 0; offset < records.length; offset += 75) {
+        const response = await fetch("/api/data", {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({ kind, records: records.slice(offset, offset + 75) }),
+        });
+        if (!response.ok) throw new Error("The backup was read, but could not be saved.");
+      }
+    }
+  }, []);
 
   useEffect(() => {
     if (activeView === "list" && driveListRef.current) {
@@ -183,9 +247,13 @@ export default function Home() {
       if (!result[0]?.values.length) throw new Error("No recorded GPS locations were found in this backup.");
 
       const raw = result[0].values as number[][];
-      const drives: DriveDetails[] = (driveResult[0]?.values ?? []).map((row) => ({
-        id: Number(row[0]),
-        startDate: (Number(row[1]) + 978307200) * 1000,
+      const driveTripIds = new Map<number, number>();
+      const drives: DriveDetails[] = (driveResult[0]?.values ?? []).map((row) => {
+        const startDate = (Number(row[1]) + 978307200) * 1000;
+        driveTripIds.set(Number(row[0]), startDate);
+        return {
+        id: startDate,
+        startDate,
         endDate: (Number(row[2]) + 978307200) * 1000,
         distanceKm: Number(row[3] ?? 0) / 1000,
         startCity: String(row[4] ?? ""),
@@ -204,7 +272,7 @@ export default function Home() {
         startPlace: String(row[17] ?? ""),
         endPlace: String(row[18] ?? ""),
         tags: String(row[19] ?? "").split("|").filter(Boolean),
-      }));
+      }});
       const places: SavedPlace[] = (placeResult[0]?.values ?? []).map((row) => ({
         id: Number(row[0]), name: String(row[1] ?? ""), address: String(row[2] ?? ""),
         lat: Number(row[3]), lng: Number(row[4]),
@@ -220,7 +288,11 @@ export default function Home() {
       let recoveredPoints = 0;
       let previous: DrivePoint | null = null;
       for (const [lat, lng, appleTime, trip, recovered] of raw) {
-        const point = { lat, lng, t: (appleTime + 978307200) * 1000, trip };
+        const point = {
+          lat, lng, t: (appleTime + 978307200) * 1000,
+          trip: driveTripIds.get(trip) ?? trip,
+          recovered: recovered === 1,
+        };
         if (!Number.isFinite(lat) || !Number.isFinite(lng) || (lat === 0 && lng === 0)) continue;
         if (recovered === 1) recoveredPoints += 1;
         if (previous && previous.trip === point.trip) {
@@ -233,7 +305,7 @@ export default function Home() {
       }
       const tripCount = new Set(points.map((p) => p.trip)).size;
       const dates = points.map((p) => p.t).filter(Number.isFinite);
-      setData({
+      const importedData = {
         points,
         drives,
         trips: tripCount,
@@ -246,7 +318,11 @@ export default function Home() {
         places,
         fuelEntries,
         odometerEntries,
-      });
+      };
+      setData(importedData);
+      setStatus("syncing");
+      await syncData(importedData);
+      setData(await loadPersistedData() ?? importedData);
       setSelectedTrip(null);
       driveListScrollTopRef.current = 0;
       setActiveView("map");
@@ -257,7 +333,7 @@ export default function Home() {
       setData(null);
       setError(err instanceof Error ? err.message : "The file could not be read.");
     }
-  }, []);
+  }, [loadPersistedData, syncData]);
 
   const dateRange = data
     ? `${new Intl.DateTimeFormat("en", { month: "short", year: "numeric" }).format(data.firstDate)} — ${new Intl.DateTimeFormat("en", { month: "short", year: "numeric" }).format(data.lastDate)}`
@@ -303,8 +379,8 @@ export default function Home() {
               onDrop={(e) => { e.preventDefault(); setDragging(false); importFile(e.dataTransfer.files[0]); }}
             >
               <input ref={inputRef} type="file" accept=".magica,.sqlite,.sqlite3,.db" onChange={(e) => importFile(e.target.files?.[0])} />
-              <button className="upload-button" onClick={() => inputRef.current?.click()} disabled={status === "reading"}>
-                {status === "reading" ? "Reading backup…" : data ? "Open another file" : "Open Magica backup"}
+              <button className="upload-button" onClick={() => inputRef.current?.click()} disabled={status === "reading" || status === "syncing"}>
+                {status === "reading" ? "Loading…" : status === "syncing" ? "Syncing backup…" : data ? "Sync another backup" : "Open Magica backup"}
               </button>
               <span className="drop-copy">or drag and drop a .magica file</span>
               {status === "error" && <div className="error-copy" role="alert">{error}</div>}
