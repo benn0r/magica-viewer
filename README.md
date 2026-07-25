@@ -2,7 +2,8 @@
 
 Magica Viewer is a browser-based explorer for Magica drive-history backups. It reads `.magica` SQLite files locally, plots recorded routes on an interactive map, and lists the available drive details.
 
-> This project is vibe coded with AI assistance.
+> [!IMPORTANT]
+> **This entire repository—including the application, design, tests, documentation, and deployment setup—was made with AI.**
 
 ## Development
 
