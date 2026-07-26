@@ -19,7 +19,15 @@ jobs:
       - name: Check out repository
         uses: actions/checkout@v4
 
+      - name: Restore dependencies
+        id: dependencies
+        uses: actions/cache@v3
+        with:
+          path: node_modules
+          key: ${{ runner.os }}-node-22.13-${{ hashFiles('package-lock.json') }}
+
       - name: Install dependencies
+        if: steps.dependencies.outputs.cache-hit != 'true'
         run: npm ci
 
       - name: Build application
@@ -43,7 +51,15 @@ jobs:
       - name: Check out repository
         uses: actions/checkout@v4
 
+      - name: Restore dependencies
+        id: dependencies
+        uses: actions/cache@v3
+        with:
+          path: node_modules
+          key: ${{ runner.os }}-node-22.13-${{ hashFiles('package-lock.json') }}
+
       - name: Install dependencies
+        if: steps.dependencies.outputs.cache-hit != 'true'
         run: npm ci
 
       - name: Download production build
@@ -78,7 +94,15 @@ jobs:
       - name: Check out repository
         uses: actions/checkout@v4
 
+      - name: Restore dependencies
+        id: dependencies
+        uses: actions/cache@v3
+        with:
+          path: node_modules
+          key: ${{ runner.os }}-node-22.13-${{ hashFiles('package-lock.json') }}
+
       - name: Install dependencies
+        if: steps.dependencies.outputs.cache-hit != 'true'
         run: npm ci
 
       - name: Download production build
@@ -92,6 +116,12 @@ jobs:
         with:
           name: lint-report
           path: test-artifacts
+
+      - name: Restore Chromium
+        uses: actions/cache@v3
+        with:
+          path: ~/.cache/ms-playwright
+          key: ${{ runner.os }}-playwright-1.62.0-chromium
 
       - name: Install Chromium
         run: npx playwright install --with-deps chromium
