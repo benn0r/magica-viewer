@@ -10,6 +10,7 @@
     "build": "next build",
     "start": "next start",
     "test": "npm run lint && npm run build",
+    "test:e2e": "playwright test",
     "lint": "eslint . --ignore-pattern dist --ignore-pattern .next"
   },
   "dependencies": {
@@ -21,6 +22,7 @@
   },
   "devDependencies": {
     "@cloudflare/vite-plugin": "1.37.1",
+    "@playwright/test": "^1.62.0",
     "@tailwindcss/postcss": "4.2.1",
     "@types/leaflet": "^1.9.21",
     "@types/node": "22.19.19",

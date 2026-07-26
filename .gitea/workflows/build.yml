@@ -10,7 +10,7 @@ on:
   workflow_dispatch:
 
 jobs:
-  test:
+  build:
     runs-on: ubuntu-latest-slim
     container: node:22.13.0-bookworm
     timeout-minutes: 15
@@ -22,10 +22,96 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
-      - name: Test
-        run: npm test
+      - name: Build application
+        run: npm run build
+
+      - name: Upload production build
+        uses: actions/upload-artifact@v3
+        with:
+          name: next-build
+          path: .next
+          include-hidden-files: true
+          retention-days: 3
+
+  test:
+    needs: build
+    runs-on: ubuntu-latest-slim
+    container: node:22.13.0-bookworm
+    timeout-minutes: 15
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Download production build
+        uses: actions/download-artifact@v3
+        with:
+          name: next-build
+          path: .next
+
+      - name: Verify production build
+        run: test -f .next/BUILD_ID
+
+      - name: Lint
+        run: |
+          mkdir -p test-artifacts
+          npx eslint . --ignore-pattern dist --ignore-pattern .next \
+            --format json --output-file test-artifacts/eslint.json
+
+      - name: Upload lint report
+        uses: actions/upload-artifact@v3
+        with:
+          name: lint-report
+          path: test-artifacts/eslint.json
+          retention-days: 7
+
+  test-e2e:
+    needs: test
+    runs-on: ubuntu-latest-slim
+    container: node:22.13.0-bookworm
+    timeout-minutes: 20
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Download production build
+        uses: actions/download-artifact@v3
+        with:
+          name: next-build
+          path: .next
+
+      - name: Download lint report
+        uses: actions/download-artifact@v3
+        with:
+          name: lint-report
+          path: test-artifacts
+
+      - name: Install Chromium
+        run: npx playwright install --with-deps chromium
+
+      - name: Run end-to-end tests
+        run: npm run test:e2e
+
+      - name: Upload end-to-end report
+        if: always()
+        uses: actions/upload-artifact@v3
+        with:
+          name: e2e-report
+          path: |
+            playwright-report
+            test-results
+          retention-days: 7
+          if-no-files-found: ignore
 
   publish-image:
+    needs: test-e2e
     if: gitea.event_name == 'push' && startsWith(gitea.ref, 'refs/heads/')
     runs-on: ubuntu-latest
     timeout-minutes: 30
@@ -36,6 +122,18 @@ jobs:
     steps:
       - name: Check out repository
         uses: actions/checkout@v4
+
+      - name: Download lint report
+        uses: actions/download-artifact@v3
+        with:
+          name: lint-report
+          path: ci-artifacts/lint
+
+      - name: Download end-to-end report
+        uses: actions/download-artifact@v3
+        with:
+          name: e2e-report
+          path: ci-artifacts/e2e
 
       - name: Install Docker CLI
         shell: sh

@@ -19,6 +19,7 @@ Useful commands:
 - `npm run lint` checks the source.
 - `npm run build` creates the production build.
 - `npm test` runs lint and the production build.
+- `npm run test:e2e` runs the Playwright browser tests against a production build.
 
 ## Architecture
 
