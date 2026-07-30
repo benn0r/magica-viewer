@@ -71,17 +71,16 @@ jobs:
   test-e2e:
     needs: build
     runs-on: ubuntu-latest-slim
-    container: mcr.microsoft.com/playwright:v1.62.0-noble
+    container:
+      image: ${{ vars.PLAYWRIGHT_IMAGE }}
+      credentials:
+        username: ${{ gitea.actor }}
+        password: ${{ secrets.REGISTRY_TOKEN }}
     timeout-minutes: 20
 
     steps:
       - name: Check out repository
         uses: actions/checkout@v4
-
-      - name: Set up Node.js
-        uses: actions/setup-node@v4
-        with:
-          node-version: 22.13.0
 
       - name: Install dependencies
         run: npm ci
