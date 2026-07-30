@@ -2,11 +2,11 @@ import { mkdirSync } from "node:fs";
 import { dirname } from "node:path";
 import { DatabaseSync } from "node:sqlite";
 import { createRecordsKindIndex, createRecordsTable } from "../../../db/schema";
+import { isRecordValue, isSyncBatch } from "../../../lib/sync-batch";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
-const recordKinds = new Set(["points", "drives", "places", "fuelEntries", "odometerEntries", "summary"]);
 const databasePath = process.env.SQLITE_PATH || "./data/magica-viewer.sqlite";
 
 function openDatabase() {
@@ -21,29 +21,44 @@ function openDatabase() {
 export async function GET() {
   const database = openDatabase();
   try {
-    const rows = database.prepare("SELECT kind, payload FROM records ORDER BY kind, record_key")
+    const rows = database
+      .prepare("SELECT kind, payload FROM records ORDER BY kind, record_key")
       .all() as Array<{ kind: string; payload: string }>;
     const data: Record<string, unknown[]> = {
-      points: [], drives: [], places: [], fuelEntries: [], odometerEntries: [],
+      points: [],
+      drives: [],
+      places: [],
+      fuelEntries: [],
+      odometerEntries: [],
     };
-    let summary: Record<string, unknown> = {};
+    let ignoredPoints = 0;
     for (const row of rows) {
-      const value = JSON.parse(row.payload);
-      if (row.kind === "summary") summary = value;
-      else data[row.kind]?.push(value);
+      let value: unknown;
+      try {
+        value = JSON.parse(row.payload);
+      } catch {
+        continue;
+      }
+      if (!isRecordValue(row.kind, value)) continue;
+      if (row.kind === "summary") {
+        const candidate = Number((value as { ignoredPoints?: unknown })?.ignoredPoints);
+        if (Number.isFinite(candidate) && candidate >= 0) ignoredPoints = candidate;
+      } else data[row.kind]?.push(value);
     }
-    return Response.json({ ...data, ...summary });
+    return Response.json({ ...data, ignoredPoints });
   } finally {
     database.close();
   }
 }
 
 export async function POST(request: Request) {
-  const body = await request.json() as {
-    kind?: string;
-    records?: Array<{ key?: string; value?: unknown }>;
-  };
-  if (!body.kind || !recordKinds.has(body.kind) || !Array.isArray(body.records) || body.records.length > 75) {
+  let body: unknown;
+  try {
+    body = await request.json();
+  } catch {
+    return Response.json({ error: "Invalid sync batch." }, { status: 400 });
+  }
+  if (!isSyncBatch(body)) {
     return Response.json({ error: "Invalid sync batch." }, { status: 400 });
   }
   const database = openDatabase();
@@ -59,7 +74,6 @@ export async function POST(request: Request) {
     try {
       const now = Date.now();
       for (const record of body.records) {
-        if (!record.key || record.value === undefined) throw new Error("Invalid sync record.");
         upsert.run(body.kind, record.key, JSON.stringify(record.value), now);
       }
       database.exec("COMMIT");

@@ -1,0 +1,7 @@
+.next
+node_modules
+playwright-report
+test-results
+public/sql-wasm.wasm
+package-lock.json
+README.md

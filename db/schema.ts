@@ -8,4 +8,5 @@ export const createRecordsTable = `
   )
 `;
 
-export const createRecordsKindIndex = "CREATE INDEX IF NOT EXISTS records_kind_idx ON records (kind)";
+export const createRecordsKindIndex =
+  "CREATE INDEX IF NOT EXISTS records_kind_idx ON records (kind)";

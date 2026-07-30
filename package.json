@@ -9,7 +9,10 @@
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
-    "test": "npm run lint && npm run build",
+    "format": "prettier --write .",
+    "format:check": "prettier --check .",
+    "test": "vitest run",
+    "test:unit": "vitest run",
     "test:e2e": "playwright test",
     "lint": "eslint . --ignore-pattern dist --ignore-pattern .next"
   },
@@ -33,11 +36,13 @@
     "@vitejs/plugin-rsc": "0.5.32",
     "eslint": "9.39.4",
     "eslint-config-next": "16.2.12",
+    "prettier": "^3.9.6",
     "react-server-dom-webpack": "19.2.8",
     "tailwindcss": "4.3.3",
     "typescript": "5.9.3",
     "vinext": "0.0.50",
     "vite": "8.2.0",
+    "vitest": "^4.1.10",
     "wrangler": "4.115.0"
   },
   "type": "module"
