@@ -71,7 +71,7 @@ jobs:
   test-e2e:
     needs: build
     runs-on: ubuntu-latest-slim
-    container: node:22.13.0-bookworm
+    container: mcr.microsoft.com/playwright:v1.62.0-noble
     timeout-minutes: 20
 
     steps:
@@ -86,9 +86,6 @@ jobs:
         with:
           name: next-build
           path: .next
-
-      - name: Install Chromium
-        run: npx playwright install --with-deps chromium
 
       - name: Run end-to-end tests
         run: npm run test:e2e
